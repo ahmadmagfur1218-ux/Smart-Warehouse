@@ -1,0 +1,570 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Hardened Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'ahmadmagfur1218@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOperator() {
+      return isAdmin() || (
+        isVerified() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['ADMIN', 'OPERATOR'] &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'ACTIVE'
+      );
+    }
+
+    function isMemberOfDoc(data) {
+      return isBootstrappedAdmin() ||
+        data.ownerUid == request.auth.uid ||
+        (data.memberUids is list && request.auth.uid in data.memberUids);
+    }
+
+    function isValidMemberList(members) {
+      return members is list &&
+        members.size() >= 1 &&
+        members.size() <= 25 &&
+        members[0] is string &&
+        members[0].size() >= 1 &&
+        members[0].size() <= 128;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidWarehouse(data) {
+      return data.keys().hasAll(['id', 'code', 'name', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'code', 'name', 'location', 'description', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidString(data.code, 1, 32) &&
+        isValidString(data.name, 1, 120) &&
+        (!('location' in data) || isValidString(data.location, 0, 200)) &&
+        (!('description' in data) || isValidString(data.description, 0, 500)) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidZone(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'code', 'name', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'code', 'name', 'description', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidString(data.code, 1, 32) &&
+        isValidString(data.name, 1, 120) &&
+        (!('description' in data) || isValidString(data.description, 0, 300)) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGate(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'zoneId', 'code', 'name', 'gateType', 'debounceWindowSec', 'isActive', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'zoneId', 'code', 'name', 'gateType', 'debounceWindowSec', 'isActive', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidId(data.zoneId) &&
+        isValidString(data.code, 1, 32) &&
+        isValidString(data.name, 1, 120) &&
+        data.gateType in ['INBOUND', 'OUTBOUND', 'BIDIRECTIONAL'] &&
+        data.debounceWindowSec is number && data.debounceWindowSec >= 0 && data.debounceWindowSec <= 300 &&
+        data.isActive is bool &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRack(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'zoneId', 'code', 'name', 'unitType', 'maxCapacity', 'usedCapacity', 'statusColor', 'rowIndex', 'colIndex', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'zoneId', 'code', 'name', 'unitType', 'maxCapacity', 'usedCapacity', 'statusColor', 'rowIndex', 'colIndex', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidId(data.zoneId) &&
+        isValidString(data.code, 1, 32) &&
+        isValidString(data.name, 1, 120) &&
+        data.unitType in ['PALLET_SLOT', 'UNIT', 'M3'] &&
+        data.maxCapacity is number && data.maxCapacity > 0 &&
+        data.usedCapacity is number && data.usedCapacity >= 0 &&
+        data.statusColor in ['GREEN', 'YELLOW', 'RED'] &&
+        data.rowIndex is number && data.rowIndex >= 0 &&
+        data.colIndex is number && data.colIndex >= 0 &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidItem(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'sku', 'name', 'category', 'unitLabel', 'unitVolumeM3', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'sku', 'name', 'category', 'unitLabel', 'unitVolumeM3', 'defaultRackId', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidString(data.sku, 1, 64) &&
+        isValidString(data.name, 1, 160) &&
+        isValidString(data.category, 1, 80) &&
+        isValidString(data.unitLabel, 1, 32) &&
+        data.unitVolumeM3 is number && data.unitVolumeM3 >= 0 &&
+        (!('defaultRackId' in data) || isValidString(data.defaultRackId, 0, 128)) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidItemTag(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'tagOrCode', 'tagType', 'itemId', 'sku', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'tagOrCode', 'tagType', 'itemId', 'sku', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidString(data.tagOrCode, 1, 128) &&
+        data.tagType in ['RFID', 'BARCODE', 'QR'] &&
+        isValidId(data.itemId) &&
+        isValidString(data.sku, 1, 64) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDevice(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'gateId', 'deviceCode', 'name', 'sourceType', 'status', 'lastHeartbeatIso', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'gateId', 'deviceCode', 'name', 'sourceType', 'apiKeyPreview', 'mqttTopic', 'status', 'lastHeartbeatIso', 'firmwareVersion', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidId(data.gateId) &&
+        isValidString(data.deviceCode, 1, 64) &&
+        isValidString(data.name, 1, 120) &&
+        data.sourceType in ['RFID', 'BARCODE', 'PROXIMITY'] &&
+        (!('apiKeyPreview' in data) || isValidString(data.apiKeyPreview, 0, 32)) &&
+        (!('mqttTopic' in data) || isValidString(data.mqttTopic, 0, 200)) &&
+        data.status in ['ONLINE', 'OFFLINE'] &&
+        isValidString(data.lastHeartbeatIso, 1, 64) &&
+        (!('firmwareVersion' in data) || isValidString(data.firmwareVersion, 0, 32)) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRackStock(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'rackId', 'itemId', 'sku', 'itemName', 'quantity', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'rackId', 'itemId', 'sku', 'itemName', 'quantity', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        isValidId(data.rackId) &&
+        isValidId(data.itemId) &&
+        isValidString(data.sku, 1, 64) &&
+        isValidString(data.itemName, 1, 160) &&
+        data.quantity is number && data.quantity >= 0 &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMovement(data) {
+      return data.keys().hasAll(['id', 'eventId', 'payloadHash', 'warehouseId', 'gateId', 'gateCode', 'direction', 'quantity', 'source', 'placementStatus', 'eventTimestamp', 'createdByUid', 'ownerUid', 'memberUids', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'eventId', 'payloadHash', 'warehouseId', 'gateId', 'gateCode', 'direction', 'itemId', 'sku', 'itemName', 'quantity', 'source', 'deviceId', 'rackId', 'rackCode', 'placementStatus', 'tagOrCode', 'rawPayload', 'eventTimestamp', 'createdByUid', 'ownerUid', 'memberUids', 'createdAt']) &&
+        isValidId(data.id) &&
+        isValidString(data.eventId, 1, 128) &&
+        isValidString(data.payloadHash, 1, 128) &&
+        isValidId(data.warehouseId) &&
+        isValidId(data.gateId) &&
+        isValidString(data.gateCode, 1, 32) &&
+        data.direction in ['IN', 'OUT'] &&
+        (!('itemId' in data) || isValidString(data.itemId, 0, 128)) &&
+        (!('sku' in data) || isValidString(data.sku, 0, 64)) &&
+        (!('itemName' in data) || isValidString(data.itemName, 0, 160)) &&
+        data.quantity is number && data.quantity > 0 &&
+        data.source in ['RFID', 'BARCODE', 'PROXIMITY', 'MANUAL'] &&
+        (!('deviceId' in data) || isValidString(data.deviceId, 0, 128)) &&
+        (!('rackId' in data) || isValidString(data.rackId, 0, 128)) &&
+        (!('rackCode' in data) || isValidString(data.rackCode, 0, 32)) &&
+        data.placementStatus in ['ASSIGNED', 'UNASSIGNED', 'OVER_CAPACITY_REJECTED'] &&
+        (!('tagOrCode' in data) || isValidString(data.tagOrCode, 0, 128)) &&
+        (!('rawPayload' in data) || isValidString(data.rawPayload, 0, 2000)) &&
+        isValidString(data.eventTimestamp, 1, 64) &&
+        isValidId(data.createdByUid) &&
+        data.createdByUid == request.auth.uid &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAlert(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'severity', 'type', 'message', 'acknowledged', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'rackId', 'rackCode', 'severity', 'type', 'message', 'acknowledged', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        (!('rackId' in data) || isValidString(data.rackId, 0, 128)) &&
+        (!('rackCode' in data) || isValidString(data.rackCode, 0, 32)) &&
+        data.severity in ['WARNING', 'CRITICAL', 'INFO'] &&
+        data.type in ['THRESHOLD_YELLOW', 'THRESHOLD_RED', 'OVER_CAPACITY', 'UNASSIGNED_RACK', 'DEVICE_OFFLINE'] &&
+        isValidString(data.message, 1, 400) &&
+        data.acknowledged is bool &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSetting(data) {
+      return data.keys().hasAll(['id', 'warehouseId', 'greenMaxPct', 'yellowMaxPct', 'heartbeatTimeoutSec', 'defaultDebounceSec', 'allowOverCapacity', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'warehouseId', 'greenMaxPct', 'yellowMaxPct', 'heartbeatTimeoutSec', 'defaultDebounceSec', 'allowOverCapacity', 'defaultAreaCount', 'defaultRacksPerArea', 'defaultAislesPerArea', 'defaultRackCapacity', 'defaultRackUnit', 'ownerUid', 'memberUids', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.warehouseId) &&
+        data.greenMaxPct is number && data.greenMaxPct >= 10 && data.greenMaxPct <= 90 &&
+        data.yellowMaxPct is number && data.yellowMaxPct > data.greenMaxPct && data.yellowMaxPct <= 99 &&
+        data.heartbeatTimeoutSec is number && data.heartbeatTimeoutSec >= 10 && data.heartbeatTimeoutSec <= 600 &&
+        data.defaultDebounceSec is number && data.defaultDebounceSec >= 0 && data.defaultDebounceSec <= 120 &&
+        data.allowOverCapacity is bool &&
+        (!('defaultAreaCount' in data) || (data.defaultAreaCount is number && data.defaultAreaCount >= 1 && data.defaultAreaCount <= 12)) &&
+        (!('defaultRacksPerArea' in data) || (data.defaultRacksPerArea is number && data.defaultRacksPerArea >= 1 && data.defaultRacksPerArea <= 40)) &&
+        (!('defaultAislesPerArea' in data) || (data.defaultAislesPerArea is number && data.defaultAislesPerArea >= 1 && data.defaultAislesPerArea <= 6)) &&
+        (!('defaultRackCapacity' in data) || (data.defaultRackCapacity is number && data.defaultRackCapacity > 0)) &&
+        (!('defaultRackUnit' in data) || data.defaultRackUnit in ['PALLET_SLOT', 'UNIT', 'M3']) &&
+        isValidId(data.ownerUid) &&
+        isValidMemberList(data.memberUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'status', 'ownerUid', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'role', 'status', 'warehouseId', 'ownerUid', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.displayName, 1, 100) &&
+        data.role in ['ADMIN', 'OPERATOR', 'VIEWER'] &&
+        data.status in ['ACTIVE', 'SUSPENDED'] &&
+        (!('warehouseId' in data) || isValidString(data.warehouseId, 0, 128)) &&
+        isValidId(data.ownerUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        isValidString(data.email, 3, 200) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    match /warehouses/{warehouseId} {
+      allow get: if isValidId(warehouseId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(warehouseId) && isVerified() && isValidWarehouse(incoming()) &&
+        incoming().id == warehouseId &&
+        incoming().ownerUid == request.auth.uid &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(warehouseId) && isVerified() && isValidWarehouse(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'location', 'description', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(warehouseId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /zones/{zoneId} {
+      allow get: if isValidId(zoneId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(zoneId) && isVerified() && isValidZone(incoming()) &&
+        incoming().id == zoneId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(zoneId) && isVerified() && isValidZone(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['code', 'name', 'description', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(zoneId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /gates/{gateId} {
+      allow get: if isValidId(gateId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(gateId) && isVerified() && isValidGate(incoming()) &&
+        incoming().id == gateId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(gateId) && isVerified() && isValidGate(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['zoneId', 'code', 'name', 'gateType', 'debounceWindowSec', 'isActive', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(gateId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /racks/{rackId} {
+      allow get: if isValidId(rackId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(rackId) && isVerified() && isValidRack(incoming()) &&
+        incoming().id == rackId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(rackId) && isVerified() && isValidRack(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['zoneId', 'code', 'name', 'unitType', 'maxCapacity', 'usedCapacity', 'statusColor', 'rowIndex', 'colIndex', 'memberUids', 'updatedAt'])) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['usedCapacity', 'statusColor', 'updatedAt'])
+        );
+      allow delete: if isValidId(rackId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /items/{itemId} {
+      allow get: if isValidId(itemId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(itemId) && isVerified() && isValidItem(incoming()) &&
+        incoming().id == itemId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(itemId) && isVerified() && isValidItem(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'unitLabel', 'unitVolumeM3', 'defaultRackId', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(itemId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /item_tags/{tagId} {
+      allow get: if isValidId(tagId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(tagId) && isVerified() && isValidItemTag(incoming()) &&
+        incoming().id == tagId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(tagId) && isVerified() && isValidItemTag(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['tagOrCode', 'tagType', 'itemId', 'sku', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(tagId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /devices/{deviceId} {
+      allow get: if isValidId(deviceId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(deviceId) && isVerified() && isValidDevice(incoming()) &&
+        incoming().id == deviceId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(deviceId) && isVerified() && isValidDevice(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['gateId', 'deviceCode', 'name', 'sourceType', 'apiKeyPreview', 'mqttTopic', 'status', 'lastHeartbeatIso', 'firmwareVersion', 'memberUids', 'updatedAt'])) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastHeartbeatIso', 'updatedAt'])
+        );
+      allow delete: if isValidId(deviceId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /rack_stock/{stockId} {
+      allow get: if isValidId(stockId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(stockId) && isVerified() && isValidRackStock(incoming()) &&
+        incoming().id == stockId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/racks/$(incoming().rackId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(stockId) && isVerified() && isValidRackStock(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().rackId == existing().rackId &&
+        incoming().itemId == existing().itemId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'itemName', 'sku', 'updatedAt']);
+      allow delete: if isValidId(stockId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /movements/{movementId} {
+      allow get: if isValidId(movementId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(movementId) && isVerified() && isValidMovement(incoming()) &&
+        incoming().id == movementId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(movementId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /alerts/{alertId} {
+      allow get: if isValidId(alertId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(alertId) && isVerified() && isValidAlert(incoming()) &&
+        incoming().id == alertId &&
+        (isOperator() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(alertId) && isVerified() && isValidAlert(incoming()) &&
+        (isOperator() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['acknowledged', 'updatedAt']);
+      allow delete: if isValidId(alertId) && (isAdmin() || (isVerified() && existing().ownerUid == request.auth.uid));
+    }
+
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && isVerified() && isMemberOfDoc(existing());
+      allow list: if isVerified() && isMemberOfDoc(resource.data);
+      allow create: if isValidId(settingId) && isVerified() && isValidSetting(incoming()) &&
+        incoming().id == settingId &&
+        (isAdmin() || incoming().ownerUid == request.auth.uid) &&
+        existsAfter(/databases/$(database)/documents/warehouses/$(incoming().warehouseId)) &&
+        request.auth.uid in incoming().memberUids &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(settingId) && isVerified() && isValidSetting(incoming()) &&
+        (isAdmin() || existing().ownerUid == request.auth.uid) &&
+        incoming().id == existing().id &&
+        incoming().warehouseId == existing().warehouseId &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['greenMaxPct', 'yellowMaxPct', 'heartbeatTimeoutSec', 'defaultDebounceSec', 'allowOverCapacity', 'defaultAreaCount', 'defaultRacksPerArea', 'defaultAislesPerArea', 'defaultRackCapacity', 'defaultRackUnit', 'memberUids', 'updatedAt']);
+      allow delete: if isValidId(settingId) && isAdmin();
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerified() && (request.auth.uid == userId || isAdmin());
+      allow list: if isVerified() && (isBootstrappedAdmin() || resource.data.ownerUid == request.auth.uid || resource.data.uid == request.auth.uid);
+      allow create: if isValidId(userId) && isVerified() && isValidUserProfile(incoming()) &&
+        incoming().uid == userId &&
+        ((request.auth.uid == userId && (isBootstrappedAdmin() || incoming().role == 'VIEWER')) || isAdmin()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isVerified() && isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'status', 'warehouseId', 'updatedAt'])) ||
+          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']))
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+
+      match /private/info {
+        allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow list: if false;
+        allow create: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidPrivateInfo(incoming()) &&
+          incoming().uid == userId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidPrivateInfo(incoming()) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+        allow delete: if isValidId(userId) && isAdmin();
+      }
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow list: if false;
+      allow create, update, delete: if isValidId(adminUid) && isAdmin();
+    }
+  }
+}

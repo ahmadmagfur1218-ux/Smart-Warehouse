@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GateType {
+  INBOUND
+  OUTBOUND
+  BIDIRECTIONAL
+}
+
+enum Direction {
+  IN
+  OUT
+}
+
+enum EventSource {
+  RFID
+  BARCODE
+  PROXIMITY
+  MANUAL
+}
+
+enum RackUnitType {
+  PALLET_SLOT
+  UNIT
+  M3
+}
+
+enum StatusColor {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum PlacementStatus {
+  ASSIGNED
+  UNASSIGNED
+  OVER_CAPACITY_REJECTED
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+}
+
+enum TagType {
+  RFID
+  BARCODE
+  QR
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertType {
+  THRESHOLD_YELLOW
+  THRESHOLD_RED
+  OVER_CAPACITY
+  UNASSIGNED_RACK
+  DEVICE_OFFLINE
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+model Warehouse {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  name        String
+  location    String?
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  zones       Zone[]
+  gates       Gate[]
+  racks       Rack[]
+  items       Item[]
+  devices     Device[]
+  movements   Movement[]
+  alerts      Alert[]
+  settings    Setting?
+}
+
+model Zone {
+  id          String    @id @default(uuid())
+  warehouseId String
+  code        String
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  gates       Gate[]
+  racks       Rack[]
+
+  @@unique([warehouseId, code])
+}
+
+model Gate {
+  id                String     @id @default(uuid())
+  warehouseId       String
+  zoneId            String
+  code              String
+  name              String
+  gateType          GateType   @default(BIDIRECTIONAL)
+  debounceWindowSec Int        @default(5)
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  warehouse         Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  zone              Zone       @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  devices           Device[]
+  movements         Movement[]
+
+  @@unique([warehouseId, code])
+}
+
+model Rack {
+  id           String       @id @default(uuid())
+  warehouseId  String
+  zoneId       String
+  code         String
+  name         String
+  unitType     RackUnitType @default(PALLET_SLOT)
+  maxCapacity  Float
+  usedCapacity Float        @default(0)
+  statusColor  StatusColor  @default(GREEN)
+  rowIndex     Int          @default(0)
+  colIndex     Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  zone         Zone         @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  defaultItems Item[]
+  stocks       RackStock[]
+  movements    Movement[]
+  alerts       Alert[]
+
+  @@unique([warehouseId, code])
+}
+
+model Item {
+  id            String      @id @default(uuid())
+  warehouseId   String
+  sku           String      @unique
+  name          String
+  category      String
+  unitLabel     String      @default("PALLET")
+  unitVolumeM3  Float       @default(1.0)
+  defaultRackId String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  warehouse     Warehouse   @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  defaultRack   Rack?       @relation(fields: [defaultRackId], references: [id], onDelete: SetNull)
+  tags          ItemTag[]
+  rackStocks    RackStock[]
+  movements     Movement[]
+}
+
+model ItemTag {
+  id          String   @id @default(uuid())
+  tagOrCode   String   @unique
+  tagType     TagType  @default(RFID)
+  itemId      String
+  createdAt   DateTime @default(now())
+
+  item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+model Device {
+  id              String       @id @default(uuid())
+  warehouseId     String
+  gateId          String
+  deviceCode      String       @unique
+  name            String
+  sourceType      EventSource
+  apiKeyHash      String
+  mqttTopic       String?
+  status          DeviceStatus @default(OFFLINE)
+  lastHeartbeatAt DateTime?
+  firmwareVersion String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  warehouse       Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  gate            Gate         @relation(fields: [gateId], references: [id], onDelete: Restrict)
+  movements       Movement[]
+}
+
+model RackStock {
+  id        String   @id @default(uuid())
+  rackId    String
+  itemId    String
+  quantity  Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  rack      Rack     @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([rackId, itemId])
+}
+
+model Movement {
+  id              String          @id @default(uuid())
+  eventId         String          @unique
+  payloadHash     String          @unique
+  warehouseId     String
+  gateId          String
+  direction       Direction
+  itemId          String?
+  quantity        Float
+  source          EventSource
+  deviceId        String?
+  rackId          String?
+  placementStatus PlacementStatus @default(ASSIGNED)
+  tagOrCode       String?
+  rawPayload      Json?
+  timestamp       DateTime        @default(now())
+  createdAt       DateTime        @default(now())
+
+  warehouse       Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  gate            Gate            @relation(fields: [gateId], references: [id], onDelete: Restrict)
+  item            Item?           @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  device          Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  rack            Rack?           @relation(fields: [rackId], references: [id], onDelete: SetNull)
+
+  @@index([timestamp])
+  @@index([gateId])
+  @@index([itemId])
+}
+
+model Alert {
+  id           String        @id @default(uuid())
+  warehouseId  String
+  rackId       String?
+  severity     AlertSeverity
+  type         AlertType
+  message      String
+  acknowledged Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  warehouse    Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  rack         Rack?         @relation(fields: [rackId], references: [id], onDelete: SetNull)
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  displayName  String
+  passwordHash String
+  role         UserRole @default(VIEWER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Setting {
+  id                  String    @id @default(uuid())
+  warehouseId         String    @unique
+  greenMaxPct         Int       @default(69)
+  yellowMaxPct        Int       @default(94)
+  heartbeatTimeoutSec Int       @default(60)
+  defaultDebounceSec  Int       @default(5)
+  allowOverCapacity   Boolean   @default(false)
+  updatedAt           DateTime  @updatedAt
+
+  warehouse           Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+}

@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Public Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #f4f7fb;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rackBlinkWarn {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.56;
+    filter: brightness(1.18) saturate(1.25);
+  }
+}
+
+@keyframes rackBlinkCritical {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    opacity: 0.48;
+    filter: brightness(1.22) saturate(1.3);
+  }
+}
+
+.animate-rack-blink-warn {
+  animation: rackBlinkWarn 1.25s ease-in-out infinite;
+}
+
+.animate-rack-blink-critical {
+  animation: rackBlinkCritical 0.8s ease-in-out infinite;
+}

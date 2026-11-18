@@ -1,0 +1,6 @@
+{
+  "name": "Smart Warehouse Inventory",
+  "description": "Real-time IoT gate movement logging and visual rack capacity monitoring system with pluggable RFID, barcode, and proximity adapters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

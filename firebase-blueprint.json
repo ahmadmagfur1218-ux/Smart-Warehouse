@@ -1,0 +1,318 @@
+{
+  "entities": {
+    "Warehouse": {
+      "title": "Warehouse",
+      "description": "Physical warehouse facility containing zones, gates, and racks.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "location": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 500 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array", "description": "Bounded list of authorized member UIDs (max 25)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "name", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Zone": {
+      "title": "Zone",
+      "description": "Logical storage zone inside a warehouse (e.g., Receiving, Cold Storage, Bulk).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 300 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "code", "name", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Gate": {
+      "title": "Gate",
+      "description": "Warehouse dock gate equipped with IoT readers or sensors.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "zoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "gateType": { "type": "string", "enum": ["INBOUND", "OUTBOUND", "BIDIRECTIONAL"] },
+        "debounceWindowSec": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "zoneId", "code", "name", "gateType", "debounceWindowSec", "isActive", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Rack": {
+      "title": "Rack",
+      "description": "Storage rack with configurable capacity unit and live utilization status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "zoneId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "unitType": { "type": "string", "enum": ["PALLET_SLOT", "UNIT", "M3"] },
+        "maxCapacity": { "type": "number" },
+        "usedCapacity": { "type": "number" },
+        "statusColor": { "type": "string", "enum": ["GREEN", "YELLOW", "RED"] },
+        "rowIndex": { "type": "number" },
+        "colIndex": { "type": "number" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "zoneId", "code", "name", "unitType", "maxCapacity", "usedCapacity", "statusColor", "rowIndex", "colIndex", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Item": {
+      "title": "Item",
+      "description": "Master SKU catalog record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "category": { "type": "string", "maxLength": 80 },
+        "unitLabel": { "type": "string", "maxLength": 32 },
+        "unitVolumeM3": { "type": "number" },
+        "defaultRackId": { "type": "string", "maxLength": 128 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "sku", "name", "category", "unitLabel", "unitVolumeM3", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "ItemTag": {
+      "title": "ItemTag",
+      "description": "Mapping between RFID EPC / Barcode / QR string and an Item SKU.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "tagOrCode": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "tagType": { "type": "string", "enum": ["RFID", "BARCODE", "QR"] },
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "tagOrCode", "tagType", "itemId", "sku", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Device": {
+      "title": "Device",
+      "description": "IoT reader or sensor attached to a warehouse gate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "gateId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "deviceCode": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "sourceType": { "type": "string", "enum": ["RFID", "BARCODE", "PROXIMITY"] },
+        "apiKeyPreview": { "type": "string", "maxLength": 32 },
+        "mqttTopic": { "type": "string", "maxLength": 200 },
+        "status": { "type": "string", "enum": ["ONLINE", "OFFLINE"] },
+        "lastHeartbeatIso": { "type": "string", "maxLength": 64 },
+        "firmwareVersion": { "type": "string", "maxLength": 32 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "gateId", "deviceCode", "name", "sourceType", "status", "lastHeartbeatIso", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "RackStock": {
+      "title": "RackStock",
+      "description": "Current quantity of a specific SKU stored inside a rack.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rackId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "itemName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "quantity": { "type": "number" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "rackId", "itemId", "sku", "itemName", "quantity", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Movement": {
+      "title": "Movement",
+      "description": "Immutable gate movement event log entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "eventId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "payloadHash": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "gateId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "gateCode": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "direction": { "type": "string", "enum": ["IN", "OUT"] },
+        "itemId": { "type": "string", "maxLength": 128 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "itemName": { "type": "string", "maxLength": 160 },
+        "quantity": { "type": "number" },
+        "source": { "type": "string", "enum": ["RFID", "BARCODE", "PROXIMITY", "MANUAL"] },
+        "deviceId": { "type": "string", "maxLength": 128 },
+        "rackId": { "type": "string", "maxLength": 128 },
+        "rackCode": { "type": "string", "maxLength": 32 },
+        "placementStatus": { "type": "string", "enum": ["ASSIGNED", "UNASSIGNED", "OVER_CAPACITY_REJECTED"] },
+        "tagOrCode": { "type": "string", "maxLength": 128 },
+        "rawPayload": { "type": "string", "maxLength": 2000 },
+        "eventTimestamp": { "type": "string", "maxLength": 64 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "eventId", "payloadHash", "warehouseId", "gateId", "gateCode", "direction", "quantity", "source", "placementStatus", "eventTimestamp", "createdByUid", "ownerUid", "memberUids", "createdAt"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "Operational capacity or device health notification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rackId": { "type": "string", "maxLength": 128 },
+        "rackCode": { "type": "string", "maxLength": 32 },
+        "severity": { "type": "string", "enum": ["WARNING", "CRITICAL", "INFO"] },
+        "type": { "type": "string", "enum": ["THRESHOLD_YELLOW", "THRESHOLD_RED", "OVER_CAPACITY", "UNASSIGNED_RACK", "DEVICE_OFFLINE"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "acknowledged": { "type": "boolean" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "severity", "type", "message", "acknowledged", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Configurable thresholds and debounce/heartbeat defaults per warehouse.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "warehouseId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "greenMaxPct": { "type": "number" },
+        "yellowMaxPct": { "type": "number" },
+        "heartbeatTimeoutSec": { "type": "number" },
+        "defaultDebounceSec": { "type": "number" },
+        "allowOverCapacity": { "type": "boolean" },
+        "defaultAreaCount": { "type": "number" },
+        "defaultRacksPerArea": { "type": "number" },
+        "defaultAislesPerArea": { "type": "number" },
+        "defaultRackCapacity": { "type": "number" },
+        "defaultRackUnit": { "type": "string", "enum": ["PALLET_SLOT", "UNIT", "M3"] },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "memberUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "warehouseId", "greenMaxPct", "yellowMaxPct", "heartbeatTimeoutSec", "defaultDebounceSec", "allowOverCapacity", "ownerUid", "memberUids", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Role-based access profile (PII isolated in private subcollection).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "type": "string", "enum": ["ADMIN", "OPERATOR", "VIEWER"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "warehouseId": { "type": "string", "maxLength": 128 },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "status", "ownerUid", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII record for a user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/warehouses/{warehouseId}": {
+      "schema": { "$ref": "#/entities/Warehouse" },
+      "description": "Warehouse master records."
+    },
+    "/zones/{zoneId}": {
+      "schema": { "$ref": "#/entities/Zone" },
+      "description": "Storage zones inside warehouses."
+    },
+    "/gates/{gateId}": {
+      "schema": { "$ref": "#/entities/Gate" },
+      "description": "Warehouse dock gates."
+    },
+    "/racks/{rackId}": {
+      "schema": { "$ref": "#/entities/Rack" },
+      "description": "Warehouse storage racks with live utilization."
+    },
+    "/items/{itemId}": {
+      "schema": { "$ref": "#/entities/Item" },
+      "description": "Master SKU catalog."
+    },
+    "/item_tags/{tagId}": {
+      "schema": { "$ref": "#/entities/ItemTag" },
+      "description": "RFID/Barcode/QR tag to SKU mappings."
+    },
+    "/devices/{deviceId}": {
+      "schema": { "$ref": "#/entities/Device" },
+      "description": "IoT readers and sensors."
+    },
+    "/rack_stock/{stockId}": {
+      "schema": { "$ref": "#/entities/RackStock" },
+      "description": "Per-rack per-SKU inventory counts."
+    },
+    "/movements/{movementId}": {
+      "schema": { "$ref": "#/entities/Movement" },
+      "description": "Gate movement event logs."
+    },
+    "/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/Alert" },
+      "description": "Capacity and device status alerts."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "Warehouse capacity threshold and timeout settings."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User RBAC profile without PII."
+    },
+    "/users/{userId}/private/info": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated private user email PII."
+    }
+  }
+}
